@@ -30,5 +30,23 @@ def convert_docx():
         return send_file(pdf_path, as_attachment=True,
                         download_name=file.filename.replace('.docx', '.pdf'))
 
+@app.route('/pdf-to-word', methods=['POST'])
+def pdf_to_word():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    file = request.files['file']
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf_path = os.path.join(tmp, file.filename)
+        file.save(pdf_path)
+        subprocess.run([
+            'libreoffice', '--headless',
+            '--convert-to', 'docx',
+            '--outdir', tmp, pdf_path
+        ], check=True)
+        docx_path = os.path.join(tmp, 
+            os.path.splitext(file.filename)[0] + '.docx')
+        return send_file(docx_path, as_attachment=True,
+            download_name=file.filename.replace('.pdf', '.docx'))
+
 if __name__ == '__main__':
     app.run()
