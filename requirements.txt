@@ -1,0 +1,3 @@
+flask
+docx2pdf
+flask-cors
