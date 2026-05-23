@@ -1,6 +1,6 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
-import tempfile, os, subprocess, glob
+import tempfile, os, subprocess, glob, shutil
 
 app = Flask(__name__)
 CORS(app)
@@ -35,24 +35,29 @@ def pdf_to_word():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
     file = request.files['file']
-    with tempfile.TemporaryDirectory() as tmp:
-        pdf_path = os.path.join(tmp, file.filename)
-        file.save(pdf_path)
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        input_path = os.path.join(tmp_dir, 'input.pdf')
+        file.save(input_path)
         result = subprocess.run([
-            'libreoffice', '--headless',
-            '--convert-to', 'docx',
-            '--outdir', tmp, pdf_path
-        ], capture_output=True, text=True)
+            'libreoffice', '--headless', '--convert-to', 'docx',
+            '--outdir', tmp_dir, input_path
+        ], capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             return jsonify({'error': 'Conversion failed', 'details': result.stderr}), 500
 
-        output_files = glob.glob(os.path.join(tmp, '*.docx'))
-        if not output_files:
+        matches = glob.glob(os.path.join(tmp_dir, '*.docx'))
+        if not matches:
             return jsonify({'error': 'Conversion failed', 'details': 'No output file found'}), 500
 
-        output_path = output_files[0]
+        output_path = matches[0]
         return send_file(output_path, as_attachment=True,
             download_name=file.filename.replace('.pdf', '.docx'))
+    finally:
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     app.run()
