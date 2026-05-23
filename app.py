@@ -1,6 +1,7 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 import tempfile, os, subprocess, glob, shutil
+import io
 
 app = Flask(__name__)
 CORS(app)
@@ -36,28 +37,30 @@ def pdf_to_word():
         return jsonify({'error': 'No file uploaded'}), 400
     file = request.files['file']
     tmp_dir = tempfile.mkdtemp()
-    try:
-        input_path = os.path.join(tmp_dir, 'input.pdf')
-        file.save(input_path)
-        result = subprocess.run([
-            'libreoffice', '--headless', '--convert-to', 'docx',
-            '--outdir', tmp_dir, input_path
-        ], capture_output=True, text=True, timeout=60)
-        if result.returncode != 0:
-            return jsonify({'error': 'Conversion failed', 'details': result.stderr}), 500
+    input_path = os.path.join(tmp_dir, 'input.pdf')
+    file.save(input_path)
+    result = subprocess.run([
+        'libreoffice', '--headless', '--convert-to', 'docx',
+        '--outdir', tmp_dir, input_path
+    ], capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        return jsonify({'error': 'Conversion failed', 'details': result.stderr}), 500
 
-        matches = glob.glob(os.path.join(tmp_dir, '*.docx'))
-        if not matches:
-            return jsonify({'error': 'Conversion failed', 'details': 'No output file found'}), 500
+    matches = glob.glob(os.path.join(tmp_dir, '*.docx'))
+    if not matches:
+        return jsonify({'error': 'Conversion failed', 'details': 'No output file found'}), 500
 
-        output_path = matches[0]
-        return send_file(output_path, as_attachment=True,
-            download_name=file.filename.replace('.pdf', '.docx'))
-    finally:
-        try:
-            shutil.rmtree(tmp_dir)
-        except Exception:
-            pass
+    output_path = matches[0]
+    with open(output_path, 'rb') as f:
+        file_data = io.BytesIO(f.read())
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    file_data.seek(0)
+    return send_file(
+        file_data,
+        as_attachment=True,
+        download_name=file.filename.replace('.pdf', '.docx'),
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
 
 if __name__ == '__main__':
     app.run()
